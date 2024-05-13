@@ -102,6 +102,36 @@ fn extract_header(_t: u8, buffer: &[u8]) -> (String, usize, usize) {
     (object_type, file_size, i)
 }
 
+fn extract_tree_content(buffer: &[u8]) -> (String, String, Vec<u8>, usize) {
+    let mut i = 0;
+    loop {
+        if buffer[i] == 32 {
+            break;
+        }
+        i += 1;
+    }
+    let mode_byte = &buffer[0..i];
+    let mut name = String::new();
+    i += 1;
+
+    loop {
+        if buffer[i] == 0 {
+            break;
+        }
+
+        name.push(char::from(buffer[i]));
+        i += 1;
+    }
+
+    i += 1;
+
+    let mode = String::from_utf8(mode_byte.to_vec()).unwrap();
+
+    let hash = Vec::from(&buffer[i..i + 20]);
+
+    (mode, name, hash, i + 20)
+}
+
 fn ls_tree(args: Vec<String>) {
     let _options = &args[1..args.len() - 1];
     let file = &args[args.len() - 1];
@@ -113,9 +143,30 @@ fn ls_tree(args: Vec<String>) {
 
             d.read_to_end(&mut s).unwrap();
 
-            let (header, size, index) = extract_header(0, &s);
+            let (object_type, _, mut index) = extract_header(0, &s);
+            index += 1;
 
-            println!("{header} {size} {index}");
+            loop {
+                let buffer = &s[index..];
+                if buffer.len() == 0 {
+                    break;
+                }
+
+                let (mode, name, hash, s) = extract_tree_content(&s[index..]);
+                index += s;
+
+                let hash_str = hash
+                    .iter()
+                    .map(|e| format!("{:02x}", e))
+                    .collect::<Vec<_>>()
+                    .join("");
+
+                if _options.iter().any(|x| x.eq("--name-only")) {
+                    println!("{name}");
+                } else {
+                    println!("{:0>6} {object_type} {hash_str} {name}", mode.trim());
+                }
+            }
         }
         Err(e) => {
             println!("{}", e)
