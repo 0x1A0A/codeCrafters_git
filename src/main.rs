@@ -1,6 +1,7 @@
 use std::env;
 use std::fs;
 use std::io::prelude::*;
+use std::usize;
 
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
@@ -71,6 +72,57 @@ fn hash_object(args: Vec<String>) {
     print!("{}", hash_str)
 }
 
+fn extract_header(_t: u8, buffer: &[u8]) -> (String, usize, usize) {
+    let mut i = 0;
+
+    let mut stage = 0;
+    let mut object_type = String::new();
+    let mut file_size: usize = 0;
+
+    loop {
+        match buffer[i] {
+            0 => {
+                break;
+            }
+            32 => {
+                stage = 1;
+            }
+            c => {
+                if stage == 1 {
+                    file_size <<= 8;
+                    file_size |= c as usize;
+                } else {
+                    object_type.push(char::from(c));
+                }
+            }
+        }
+        i += 1;
+    }
+
+    (object_type, file_size, i)
+}
+
+fn ls_tree(args: Vec<String>) {
+    let _options = &args[1..args.len() - 1];
+    let file = &args[args.len() - 1];
+    let value = fs::File::open(format!(".git/objects/{}/{}", &file[0..2], &file[2..]));
+    match value {
+        Ok(data) => {
+            let mut d = ZlibDecoder::new(data);
+            let mut s: Vec<u8> = Vec::new();
+
+            d.read_to_end(&mut s).unwrap();
+
+            let (header, size, index) = extract_header(0, &s);
+
+            println!("{header} {size} {index}");
+        }
+        Err(e) => {
+            println!("{}", e)
+        }
+    }
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     match args[1].as_str() {
@@ -80,6 +132,7 @@ fn main() {
         }
         "cat-file" => cat_file(args),
         "hash-object" => hash_object(args),
+        "ls-tree" => ls_tree(args),
         _ => println!("unknown command: {}", args[1]),
     }
 }
