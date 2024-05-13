@@ -29,7 +29,7 @@ fn main() {
                 d.read_to_string(&mut s).unwrap();
 
                 if let Some(i) = s.find("\u{000}") {
-                    println!("{}", &s[i+1..])
+                    println!("{}", &s.trim()[i + 1..])
                 }
             }
             Err(e) => {
