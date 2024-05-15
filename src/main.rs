@@ -77,7 +77,7 @@ fn extract_header(_t: u8, buffer: &[u8]) -> (String, usize, usize) {
 
     let mut stage = 0;
     let mut object_type = String::new();
-    let mut file_size: usize = 0;
+    let mut file_size = String::new();
 
     loop {
         match buffer[i] {
@@ -89,8 +89,7 @@ fn extract_header(_t: u8, buffer: &[u8]) -> (String, usize, usize) {
             }
             c => {
                 if stage == 1 {
-                    file_size <<= 8;
-                    file_size |= c as usize;
+                    file_size.push(char::from(c));
                 } else {
                     object_type.push(char::from(c));
                 }
@@ -99,7 +98,7 @@ fn extract_header(_t: u8, buffer: &[u8]) -> (String, usize, usize) {
         i += 1;
     }
 
-    (object_type, file_size, i)
+    (object_type, file_size.parse().unwrap(), i)
 }
 
 fn extract_tree_content(buffer: &[u8]) -> (String, String, Vec<u8>, usize) {
