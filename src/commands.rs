@@ -3,8 +3,8 @@ pub mod git_init;
 pub mod hash_object;
 pub mod ls_tree;
 
-use std::path::PathBuf;
 use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -33,4 +33,14 @@ pub enum Cli {
 
         tree_hash: String,
     },
+}
+
+#[macro_export]
+macro_rules! invoke {
+    ($command: ident, $hash: expr, $($args: ident),*) => {
+        {
+            let options = commands::$command::Options { $( $args ),* };
+            commands::$command::invoke($hash, options);
+        }
+    };
 }
