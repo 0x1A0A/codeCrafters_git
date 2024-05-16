@@ -1,5 +1,6 @@
+use core::panic;
 use reqwest::blocking::Client;
-use std::{io::Read, path::PathBuf};
+use std::{fs, io::Read, path::PathBuf};
 
 #[derive(Debug)]
 pub struct Options {
@@ -17,6 +18,8 @@ pub fn invoke(url: &str, options: Options) {
 
     let mut state = 0;
 
+    let mut pack_line: Vec<PktLine> = Vec::new();
+
     loop {
         let mut length: [u8; 4] = [0; 4];
         resp.read_exact(&mut length).unwrap();
@@ -28,21 +31,72 @@ pub fn invoke(url: &str, options: Options) {
             state += 1
         }
 
-        print!("{s} {length} ");
         if length != 0 {
             let mut buf = vec![0; length - 4];
             resp.read_exact(&mut buf).unwrap();
-            let value = String::from_utf8(buf).unwrap();
-            print!("{value}");
+            pack_line.push(PktLine {
+                length,
+                value: buf.to_vec(),
+            });
         }
 
         if state == 2 {
             break;
         }
     }
+
+    // we might need to init a git first
+    // the first response is use to request a pack upload
+    let Some((first, elements)) = pack_line[1..].split_first() else {
+        panic!("invalid size for dicover!");
+    };
+
+    let hash = &first.value[..40];
+    let hash = String::from_utf8(hash.to_vec()).unwrap();
+
+    let body = format!("0054want {hash} multi_ack side-band-64k ofs-delta\n00000009done\n");
+    let request = Vec::from(body.clone());
+
+    let rq = client
+        .post(format!("{url}/git-upload-pack"))
+        .header("Accept", "application/x-git-upload-pack-result")
+        .header("Content-Type", "application/x-git-upload-pack-request")
+        .body(request);
+
+    let mut resp = rq.send().unwrap();
+
+    state = 1;
+
+    let mut packfile = Vec::new();
+
+    loop {
+        let mut length: [u8; 4] = [0; 4];
+        resp.read_exact(&mut length).unwrap();
+
+        let s = String::from_utf8(length.to_vec()).unwrap();
+        let length = usize::from_str_radix(&s, 16).unwrap();
+
+        if length == 0 {
+            state += 1
+        }
+
+        if length != 0 {
+            let mut buf = vec![0; length - 4];
+            resp.read_exact(&mut buf).unwrap();
+            if buf.starts_with(&[0b1]) {
+                packfile.append(&mut buf[1..].to_vec());
+            }
+        }
+
+        if state == 2 {
+            break;
+        }
+    }
+
+    fs::write("pack_test.pack", packfile).unwrap();
 }
 
 struct PktLine {
     length: usize,
-    value: [u8],
+    value: Vec<u8>,
 }
