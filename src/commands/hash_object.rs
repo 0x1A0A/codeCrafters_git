@@ -13,7 +13,7 @@ pub struct Options {
     pub write: bool,
 }
 
-pub fn invoke(path: PathBuf, options: Options) {
+pub fn invoke(path: PathBuf, options: Options) -> String {
     let content = fs::read_to_string(path).unwrap();
     let data = format!("blob {}\0{}", content.len(), content);
 
@@ -35,4 +35,6 @@ pub fn invoke(path: PathBuf, options: Options) {
     }
 
     println!("{}", hash);
+
+    hash
 }

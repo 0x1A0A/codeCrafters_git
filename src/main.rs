@@ -15,5 +15,6 @@ fn main() {
             name_only,
             tree_hash,
         } => invoke!(ls_tree, &tree_hash, name_only),
+        Cli::WriteTree {} => invoke!(write_tree),
     }
 }

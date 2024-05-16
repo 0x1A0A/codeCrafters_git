@@ -2,6 +2,7 @@ pub mod cat_file;
 pub mod git_init;
 pub mod hash_object;
 pub mod ls_tree;
+pub mod write_tree;
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
@@ -33,6 +34,7 @@ pub enum Cli {
 
         tree_hash: String,
     },
+    WriteTree {},
 }
 
 #[macro_export]
@@ -41,6 +43,11 @@ macro_rules! invoke {
         {
             let options = commands::$command::Options { $( $args ),* };
             commands::$command::invoke($hash, options);
+        }
+    };
+    ($command: ident) => {
+        {
+            commands::$command::invoke();
         }
     };
 }
