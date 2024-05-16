@@ -1,4 +1,5 @@
 pub mod cat_file;
+pub mod commit_tree;
 pub mod git_init;
 pub mod hash_object;
 pub mod ls_tree;
@@ -35,6 +36,15 @@ pub enum Cli {
         tree_hash: String,
     },
     WriteTree {},
+    CommitTree {
+        tree_hash: String,
+
+        #[clap(short = 'p')]
+        parent: Option<String>,
+
+        #[clap(short = 'm')]
+        message: String,
+    },
 }
 
 #[macro_export]

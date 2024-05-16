@@ -16,5 +16,10 @@ fn main() {
             tree_hash,
         } => invoke!(ls_tree, &tree_hash, name_only),
         Cli::WriteTree {} => invoke!(write_tree),
+        Cli::CommitTree {
+            tree_hash,
+            parent,
+            message,
+        } => invoke!(commit_tree, &tree_hash, parent, message),
     }
 }
