@@ -4,6 +4,7 @@ pub mod git_init;
 pub mod hash_object;
 pub mod ls_tree;
 pub mod write_tree;
+pub mod clone;
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
@@ -44,6 +45,10 @@ pub enum Cli {
 
         #[clap(short = 'm')]
         message: String,
+    },
+    Clone {
+        source: String,
+        dir: Option<PathBuf>,
     },
 }
 

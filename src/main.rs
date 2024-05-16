@@ -21,5 +21,6 @@ fn main() {
             parent,
             message,
         } => invoke!(commit_tree, &tree_hash, parent, message),
+        Cli::Clone { source, dir } => invoke!(clone, &source, dir),
     }
 }
