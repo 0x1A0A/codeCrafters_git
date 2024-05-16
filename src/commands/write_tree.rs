@@ -46,13 +46,10 @@ fn create_tree(path: PathBuf) -> Vec<u8> {
     };
 
     let mut data: Vec<Tree> = Vec::new();
+    let mut entries: Vec<_> = entries.map(|x| x.unwrap()).collect();
+    entries.sort_by_key(|x| x.path());
 
     for entry in entries {
-        let entry = match entry {
-            Ok(e) => e,
-            Err(err) => panic!("{}", err),
-        };
-
         let path = entry.path();
         let name = entry.file_name().into_string().unwrap();
 
@@ -61,7 +58,12 @@ fn create_tree(path: PathBuf) -> Vec<u8> {
         }
 
         let metadata = fs::metadata(&path).unwrap();
-        let mode = format!("{:o}", metadata.permissions().mode());
+        let mut mode = metadata.permissions().mode();
+        if path.is_dir() {
+            mode = mode & !0o777;
+        }
+
+        let mode = format!("{:o}", mode);
         let (content, kind) = match &path.is_dir() {
             false => (blob(path), Kind::Blob),
             true => (create_tree(path), Kind::Tree),
