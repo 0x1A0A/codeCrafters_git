@@ -1,5 +1,7 @@
 use core::panic;
 use reqwest::blocking::Client;
+#[allow(unused)]
+use sha1::{Digest, Sha1};
 use std::{fs, io::Read, path::PathBuf};
 
 #[derive(Debug)]
@@ -7,6 +9,7 @@ pub struct Options {
     pub dir: Option<PathBuf>,
 }
 
+#[allow(unused)]
 pub fn invoke(url: &str, options: Options) {
     let client = Client::builder().build().unwrap();
 
@@ -93,9 +96,21 @@ pub fn invoke(url: &str, options: Options) {
         }
     }
 
-    fs::write("pack_test.pack", packfile).unwrap();
+    for pkt in elements {
+        let value = String::from_utf8(pkt.value.to_vec()).unwrap();
+        let Some((hash, path)) = value.split_once(' ') else {
+            panic!("unknow format of pkt-line");
+        };
+
+
+        let _ = fs::create_dir_all(".git/refs/heads");
+        let _ = fs::write(format!(".git/{}", path.trim()), hash);
+    }
+
+    fs::write(format!("pack_test.pack"), packfile).unwrap();
 }
 
+#[allow(unused)]
 struct PktLine {
     length: usize,
     value: Vec<u8>,
