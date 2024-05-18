@@ -1,5 +1,6 @@
 mod commands;
 mod objects;
+mod git;
 
 use clap::Parser;
 use commands::{Args, Cli};

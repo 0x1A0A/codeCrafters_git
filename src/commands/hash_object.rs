@@ -21,7 +21,7 @@ pub fn invoke(path: PathBuf, options: Options) -> String {
     hasher.update(data.as_bytes());
     let hash = hasher.finalize();
     let hash = hex::encode(hash);
-
+ 
     if options.write == true {
         let mut e = ZlibEncoder::new(Vec::new(), Compression::default());
         e.write_all(data.as_bytes()).unwrap();

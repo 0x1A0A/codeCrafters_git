@@ -51,7 +51,7 @@ pub fn invoke(url: &str, options: Options) {
     // we might need to init a git first
     // the first response is use to request a pack upload
     let Some((first, elements)) = pack_line[1..].split_first() else {
-        panic!("invalid size for dicover!");
+        panic!("invalid size for discover!");
     };
 
     let hash = &first.value[..40];
@@ -89,6 +89,10 @@ pub fn invoke(url: &str, options: Options) {
             if buf.starts_with(&[0b1]) {
                 packfile.append(&mut buf[1..].to_vec());
             }
+            
+            if buf.starts_with(&[2]) {
+                std::io::copy(&mut buf[1..].to_vec().as_slice(),&mut std::io::stdout());
+            }
         }
 
         if state == 2 {
@@ -102,12 +106,16 @@ pub fn invoke(url: &str, options: Options) {
             panic!("unknow format of pkt-line");
         };
 
-
         let _ = fs::create_dir_all(".git/refs/heads");
         let _ = fs::write(format!(".git/{}", path.trim()), hash);
     }
 
-    fs::write(format!("pack_test.pack"), packfile).unwrap();
+    crate::git::packfile_parse(&packfile);
+
+    let packsum = &packfile[packfile.len() - 20..];
+    let packsum = hex::encode(packsum);
+
+    fs::write(format!("pack_{packsum}.pack"), packfile).unwrap();
 }
 
 #[allow(unused)]
