@@ -1,4 +1,4 @@
-use std::io::{BufRead, BufReader, Read};
+use std::io::Read;
 
 use flate2::read::ZlibDecoder;
 
@@ -18,29 +18,22 @@ struct PackObj {
 }
 
 pub fn packfile_parse(data: &Vec<u8>) {
-    let mut reader = BufReader::new(data.as_slice());
-
-    let mut header = [0; 4];
-    let mut version = [0; 4];
-    let mut entries = [0; 4];
-    reader.read_exact(&mut header).unwrap();
-    reader.read_exact(&mut version).unwrap();
-    reader.read_exact(&mut entries).unwrap();
-
-    let entries = u32::from_be_bytes(entries);
+    let _header = &data[0..4];
+    let _version = &data[4..8];
+    let entries = u32::from_be_bytes(data[8..12].try_into().unwrap());
 
     let mut readed = 12;
 
     for _ in 0..entries {
-        let (pack, total) = packfile_get_size(&mut &data[readed..]);
+        let (pack, total) = get_object(data, readed);
         readed += total;
 
         match pack.kind {
             PackfileOBJ::COMMIT | PackfileOBJ::BLOB => {
                 let data = pack.data;
-                let data = String::from_utf8(data).unwrap();
-                println!("{:#?}", pack.kind);
-                println!("{data}");
+                let _data = String::from_utf8(data).unwrap();
+                //                println!("{:#?}", pack.kind);
+                //                println!("{data}");
             }
             x => {
                 println!("{:#?}", x);
@@ -51,28 +44,32 @@ pub fn packfile_parse(data: &Vec<u8>) {
     println!("done {hash}");
 }
 
-fn packfile_get_size(reader: &mut impl BufRead) -> (PackObj, usize) {
-    let mut buf = [0; 1];
+fn get_object(raw: &[u8], pos: usize) -> (PackObj, usize) {
+    let data = &raw[pos..];
+    let mut buf;
     let mut size: usize = 0;
     let mut shift = 0;
     let mut obj: u8 = 0;
 
     let mut consume = 0;
 
+    println!("====START HEADER====");
     loop {
+        buf = data[consume];
         consume += 1;
-        reader.read_exact(&mut buf).unwrap();
         if obj == 0 {
-            obj = buf[0] & 0b01110000;
+            obj = buf & 0b01110000;
             obj >>= 4;
         }
-        size |= ((buf[0] & if size == 0 { 0xf } else { 0x7f }) as usize) << shift;
+        size |= ((buf & if size == 0 { 0xf } else { 0x7f }) as usize) << shift;
         shift += if shift == 0 { 4 } else { 7 };
 
-        if buf[0] & 0x80 == 0 {
+        if buf & 0x80 == 0 {
             break;
         }
     }
+
+    println!("====END HEADER==== {size}");
 
     let obj = match obj {
         0b001 => PackfileOBJ::COMMIT,
@@ -85,21 +82,16 @@ fn packfile_get_size(reader: &mut impl BufRead) -> (PackObj, usize) {
     };
 
     if obj == PackfileOBJ::OFS {
-        shift = 0;
-        let mut _nagative = 0;
-        loop {
-            consume += 1;
-            reader.read_exact(&mut buf).unwrap();
-            _nagative |= ((buf[0] & 0x7f) as usize) << shift;
-            shift += if shift == 0 { 4 } else { 7 };
+        let (offset, readed) = offset_decode(&data[consume..]);
+        consume += readed;
 
-            if buf[0] & 0x80 == 0 {
-                break;
-            }
-        }
+        println!("obj peek back {offset} {pos}");
+        let (pack, _) = get_object(raw, pos - offset);
+
+        println!("obj peek back {offset} {pos} kind {:#?}", pack.kind);
     }
 
-    let mut z = ZlibDecoder::new(reader);
+    let mut z = ZlibDecoder::new(&data[consume..]);
     let mut content = Vec::new();
     z.read_to_end(&mut content).unwrap();
 
@@ -108,5 +100,32 @@ fn packfile_get_size(reader: &mut impl BufRead) -> (PackObj, usize) {
         data: content,
     };
 
-    (pack, (z.total_in() + consume) as usize)
+    println!(
+        "===== end parse, read {} actual {}",
+        z.total_in(),
+        z.total_out()
+    );
+
+    (pack, (z.total_in() + consume as u64) as usize)
+}
+
+fn offset_decode(data: &[u8]) -> (usize, usize) {
+    let mut offset: usize = 0;
+    let mut consume = 0;
+    let mut buf;
+
+    loop {
+        buf = data[consume];
+        consume += 1;
+
+        offset <<= 7;
+        offset |= (buf & 0x7f) as usize;
+
+        if buf & 0x80 == 0 {
+            break;
+        }
+        offset += 1;
+    }
+
+    (offset, consume)
 }
