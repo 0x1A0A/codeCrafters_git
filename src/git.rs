@@ -2,6 +2,9 @@ use std::io::Read;
 
 use flate2::read::ZlibDecoder;
 
+pub mod helpers;
+pub mod packfile;
+
 #[derive(Debug, PartialEq, Eq)]
 enum PackfileOBJ {
     COMMIT,
