@@ -4,6 +4,8 @@ use reqwest::blocking::Client;
 use sha1::{Digest, Sha1};
 use std::{fs, io::Read, path::PathBuf};
 
+use crate::git::packfile::{headers, read_object};
+
 #[derive(Debug)]
 pub struct Options {
     pub dir: Option<PathBuf>,
@@ -89,9 +91,9 @@ pub fn invoke(url: &str, options: Options) {
             if buf.starts_with(&[0b1]) {
                 packfile.append(&mut buf[1..].to_vec());
             }
-            
+
             if buf.starts_with(&[2]) {
-                std::io::copy(&mut buf[1..].to_vec().as_slice(),&mut std::io::stdout());
+                std::io::copy(&mut buf[1..].to_vec().as_slice(), &mut std::io::stdout());
             }
         }
 
@@ -110,12 +112,17 @@ pub fn invoke(url: &str, options: Options) {
         let _ = fs::write(format!(".git/{}", path.trim()), hash);
     }
 
-    crate::git::packfile_parse(&packfile);
+    let mut stream = std::io::Cursor::new(packfile.clone());
+    let (_, _, entries) = headers(&mut stream).unwrap();
 
-    let packsum = &packfile[packfile.len() - 20..];
-    let packsum = hex::encode(packsum);
+    for i in 0..entries {
+        let (_, _) = read_object(&mut stream, None).unwrap();
+    }
 
-    fs::write(format!("pack_{packsum}.pack"), packfile).unwrap();
+    let mut hash = [0; 20];
+    stream.read_exact(&mut hash).unwrap();
+
+    fs::write(format!("pack_{}.pack", hex::encode(hash)), packfile).unwrap();
 }
 
 #[allow(unused)]

@@ -4,7 +4,7 @@ use std::io::{Read, Seek, SeekFrom};
 use super::helpers;
 
 #[derive(Debug, PartialEq, Eq)]
-enum ObjType {
+pub enum ObjType {
     Blob,
     Tree,
     Commit,
@@ -29,29 +29,19 @@ enum PackObjType {
     REF,
 }
 
-fn headers(stream: &mut impl Read) -> std::io::Result<([u8; 4], u32, u32)> {
-    let header = helpers::read_bytes(stream)?;
-    let version = helpers::read_u32(stream)?;
-    let entries = helpers::read_u32(stream)?;
-    assert_eq!(&header, b"PACK");
-    assert_ne!(version, 0);
-    assert_ne!(entries, 0);
-
-    Ok((header, version, entries))
-}
-
-fn extract_size_and_type(size_and_type: usize) -> (usize, u8) {
-    ((size_and_type & !0x7) >> 3, (size_and_type & 0x7) as u8)
-}
-
-fn read_object(
+pub fn read_object(
     stream: &mut (impl Seek + Read),
-    offset: usize,
+    offset: Option<usize>,
 ) -> std::io::Result<(Vec<u8>, ObjType)> {
+    let offset = match offset {
+        Some(v) => v,
+        None => stream.stream_position()? as usize,
+    };
+
     stream.seek(SeekFrom::Start(offset as u64))?;
 
     let size_and_type = helpers::read_size(stream)?;
-    let (size, t) = extract_size_and_type(size_and_type);
+    let (_, t) = extract_size_and_type(size_and_type);
 
     let t = match t {
         0b001 => PackObjType::Base(ObjType::Commit),
@@ -67,7 +57,6 @@ fn read_object(
         PackObjType::Base(base) => {
             let current = stream.stream_position()?;
             let mut content = Vec::new();
-            content.reserve_exact(size);
             let consume = decompress(stream, &mut content)?;
 
             stream.seek(SeekFrom::Start(current + consume as u64))?;
@@ -78,9 +67,8 @@ fn read_object(
             let negativeoffset = helpers::read_offset(stream)?;
             let current = stream.stream_position()?;
 
-            let (base, base_type) = read_object(stream, offset - negativeoffset)?;
+            let (base, base_type) = read_object(stream, Some(offset - negativeoffset))?;
             let mut content = Vec::new();
-            content.reserve_exact(size);
 
             stream.seek(SeekFrom::Start(current))?;
             let consume = decompress(stream, &mut content)?;
@@ -96,9 +84,26 @@ fn read_object(
     Ok((content, content_type))
 }
 
+pub fn headers(stream: &mut impl Read) -> std::io::Result<([u8; 4], u32, u32)> {
+    let header = helpers::read_bytes(stream)?;
+    let version = helpers::read_u32(stream)?;
+    let entries = helpers::read_u32(stream)?;
+    assert_eq!(&header, b"PACK");
+    assert_ne!(version, 0);
+    assert_ne!(entries, 0);
+
+    Ok((header, version, entries))
+}
+
+fn extract_size_and_type(size_and_type: usize) -> (usize, u8) {
+    let t = (size_and_type & 0x70) >> 4;
+    let size = ((size_and_type >> 3) & !0xf) | (size_and_type & 0xf);
+    (size, t as u8)
+}
+
 fn decompress(stream: &mut impl Read, buffer: &mut Vec<u8>) -> std::io::Result<usize> {
     let mut z = ZlibDecoder::new(stream);
-    z.read_exact(buffer)?;
+    z.read_to_end(buffer)?;
 
     Ok(z.total_in() as usize)
 }
@@ -128,8 +133,8 @@ mod tests {
 
     #[test]
     fn extract_file_type_and_size() {
-        let (size, obj_type) = super::extract_size_and_type(0b1101_0110);
-        assert_eq!(size, 0b11010);
-        assert_eq!(obj_type, 0b110);
+        let (size, obj_type) = super::extract_size_and_type(0b110_101_0110);
+        assert_eq!(size, 0b110_0110);
+        assert_eq!(obj_type, 0b101);
     }
 }
