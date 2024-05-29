@@ -1,10 +1,21 @@
 use core::panic;
 use reqwest::blocking::Client;
-#[allow(unused)]
 use sha1::{Digest, Sha1};
-use std::{fs, io::Read, path::PathBuf};
+use std::{
+    collections::{self, VecDeque},
+    fs,
+    io::{Read, Write},
+    os::unix::fs::PermissionsExt,
+    path::PathBuf,
+};
 
-use crate::git::packfile::{headers, read_object};
+use crate::git::{
+    commit,
+    packfile::{headers, read_object, ObjType},
+    tree,
+};
+
+use super::git_init;
 
 #[derive(Debug)]
 pub struct Options {
@@ -50,14 +61,15 @@ pub fn invoke(url: &str, options: Options) {
         }
     }
 
-    // we might need to init a git first
-    // the first response is use to request a pack upload
+    git_init::invoke();
+
     let Some((first, elements)) = pack_line[1..].split_first() else {
         panic!("invalid size for discover!");
     };
 
     let hash = &first.value[..40];
     let hash = String::from_utf8(hash.to_vec()).unwrap();
+    let ref_head = hash.clone();
 
     let body = format!("0054want {hash} multi_ack side-band-64k ofs-delta\n00000009done\n");
     let request = Vec::from(body.clone());
@@ -104,25 +116,78 @@ pub fn invoke(url: &str, options: Options) {
 
     for pkt in elements {
         let value = String::from_utf8(pkt.value.to_vec()).unwrap();
+        println!("{}", value);
         let Some((hash, path)) = value.split_once(' ') else {
             panic!("unknow format of pkt-line");
         };
 
         let _ = fs::create_dir_all(".git/refs/heads");
-        let _ = fs::write(format!(".git/{}", path.trim()), hash);
+        let mut hash = hash.to_string();
+        hash.push('\n');
+        let _ = fs::write(format!(".git/{}", path.trim()), &hash);
     }
 
     let mut stream = std::io::Cursor::new(packfile.clone());
     let (_, _, entries) = headers(&mut stream).unwrap();
 
+    let mut map = collections::HashMap::new();
+
     for i in 0..entries {
-        let (_, _) = read_object(&mut stream, None).unwrap();
+        let (content, content_type) = read_object(&mut stream, None).unwrap();
+        let mut hasher = Sha1::new();
+        let header = format!("{} {}\0", content_type, content.len());
+        hasher.update(header);
+        hasher.update(content.clone());
+        let hash = hasher.finalize();
+        let hash = hex::encode(hash);
+        map.insert(hash, (content, content_type));
+    }
+
+    let head = map.get(&ref_head).unwrap();
+    let commit = commit::parse(&mut head.0.as_slice()).unwrap();
+
+    let mut queue: VecDeque<(String, PathBuf)> = VecDeque::new();
+    queue.push_back((commit.tree, ".".into()));
+
+    loop {
+        if queue.is_empty() {
+            break;
+        }
+        let (hash, path) = queue.pop_front().unwrap();
+        let tree = map.get(&hash).unwrap();
+        let tree = tree::parse(&mut tree.0.as_slice()).unwrap();
+        fs::create_dir_all(path.clone()).unwrap();
+
+        for item in tree {
+            let hash = hex::encode(item.hash);
+            let (content, obj_type) = map.get(&hash).unwrap();
+            let mut path = path.clone();
+            path.push(item.name);
+            match obj_type {
+                ObjType::Tree => {
+                    queue.push_back((hash, path));
+                }
+                ObjType::Blob => {
+                    let mut file = fs::File::create(path.clone()).unwrap();
+                    let mut perm = file.metadata().unwrap().permissions();
+                    perm.set_mode(item.mode);
+                    file.write(content);
+                    file.set_permissions(perm);
+                }
+                _ => unimplemented!(),
+            }
+        }
     }
 
     let mut hash = [0; 20];
     stream.read_exact(&mut hash).unwrap();
 
-    fs::write(format!("pack_{}.pack", hex::encode(hash)), packfile).unwrap();
+    fs::create_dir_all(format!(".git/objects/pack"));
+    fs::write(
+        format!(".git/objects/pack/pack_{}.pack", hex::encode(hash)),
+        packfile,
+    )
+    .unwrap();
 }
 
 #[allow(unused)]
