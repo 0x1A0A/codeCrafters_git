@@ -1,9 +1,12 @@
 use flate2::read::ZlibDecoder;
-use std::io::{Read, Seek, SeekFrom};
+use std::{
+    collections::HashMap,
+    io::{Read, Seek, SeekFrom},
+};
 
 use super::helpers;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ObjType {
     Blob,
     Tree,
@@ -31,13 +34,9 @@ enum PackObjType {
 
 pub fn read_object(
     stream: &mut (impl Seek + Read),
-    offset: Option<usize>,
+    offset: usize,
+    cache: &HashMap<usize, (Vec<u8>, ObjType)>,
 ) -> std::io::Result<(Vec<u8>, ObjType)> {
-    let offset = match offset {
-        Some(v) => v,
-        None => stream.stream_position()? as usize,
-    };
-
     stream.seek(SeekFrom::Start(offset as u64))?;
 
     let size_and_type = helpers::read_size(stream)?;
@@ -67,7 +66,17 @@ pub fn read_object(
             let negativeoffset = helpers::read_offset(stream)?;
             let current = stream.stream_position()?;
 
-            let (base, base_type) = read_object(stream, Some(offset - negativeoffset))?;
+            let base_offset = offset - negativeoffset;
+            let cached = cache.get(&base_offset);
+
+            let (base, base_type) = match cached {
+                Some(c) => {
+                    let (a, t) = c;
+                    (a.clone(), t.clone())
+                }
+                None => read_object(stream, base_offset, cache)?,
+            };
+
             let mut content = Vec::new();
 
             stream.seek(SeekFrom::Start(current))?;

@@ -2,9 +2,9 @@ use core::panic;
 use reqwest::blocking::Client;
 use sha1::{Digest, Sha1};
 use std::{
-    collections::{self, VecDeque},
+    collections::{self, HashMap, VecDeque},
     fs,
-    io::{Read, Write},
+    io::{Read, Seek, Write},
     os::unix::fs::PermissionsExt,
     path::PathBuf,
 };
@@ -132,8 +132,13 @@ pub fn invoke(url: &str, options: Options) {
 
     let mut map = collections::HashMap::new();
 
+    let mut offset_cache: HashMap<usize, (Vec<u8>, ObjType)> = HashMap::new();
+
     for i in 0..entries {
-        let (content, content_type) = read_object(&mut stream, None).unwrap();
+        let offset = stream.stream_position().unwrap() as usize;
+        let (content, content_type) = read_object(&mut stream, offset, &offset_cache).unwrap();
+        offset_cache.insert(offset, (content.clone(), content_type));
+
         let mut hasher = Sha1::new();
         let header = format!("{} {}\0", content_type, content.len());
         hasher.update(header);
