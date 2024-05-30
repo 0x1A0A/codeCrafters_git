@@ -40,7 +40,7 @@ pub fn read_object(
     stream.seek(SeekFrom::Start(offset as u64))?;
 
     let size_and_type = helpers::read_size(stream)?;
-    let (_, t) = extract_size_and_type(size_and_type);
+    let (size, t) = extract_size_and_type(size_and_type);
 
     let t = match t {
         0b001 => PackObjType::Base(ObjType::Commit),

@@ -138,6 +138,12 @@ pub fn invoke(url: &str, options: Options) {
         let offset = stream.stream_position().unwrap() as usize;
         let (content, content_type) = read_object(&mut stream, offset, &offset_cache).unwrap();
         offset_cache.insert(offset, (content.clone(), content_type));
+        let next_offset = stream.stream_position().unwrap() as usize;
+
+        let mut crc_content = &packfile[offset..next_offset];
+        let mut hasher = crc32fast::Hasher::new();
+        hasher.update(&crc_content);
+        let crc32 = hasher.finalize();
 
         let mut hasher = Sha1::new();
         let header = format!("{} {}\0", content_type, content.len());
@@ -145,7 +151,7 @@ pub fn invoke(url: &str, options: Options) {
         hasher.update(content.clone());
         let hash = hasher.finalize();
         let hash = hex::encode(hash);
-        map.insert(hash, (content, content_type));
+        map.insert(hash, (content, content_type, offset, crc32));
     }
 
     let head = map.get(&ref_head).unwrap();
@@ -165,7 +171,7 @@ pub fn invoke(url: &str, options: Options) {
 
         for item in tree {
             let hash = hex::encode(item.hash);
-            let (content, obj_type) = map.get(&hash).unwrap();
+            let (content, obj_type, _, _) = map.get(&hash).unwrap();
             let mut path = path.clone();
             path.push(item.name);
             match obj_type {
@@ -184,10 +190,89 @@ pub fn invoke(url: &str, options: Options) {
         }
     }
 
+    let mut hashes = map.keys().collect::<Vec<_>>();
+
+    hashes.sort();
+
+    let mut fanout: [u32; 1 << 8] = [0; 1 << 8];
+    let mut acc: u32 = 0;
+
+    // create fanout could turn into another function
+    for (i, fo) in fanout.iter_mut().enumerate() {
+        loop {
+            if hashes.len() == acc as usize {
+                break;
+            }
+            let v = &hashes[acc as usize][..2];
+            let v = u8::from_str_radix(v, 16).unwrap();
+            if i as u8 != v {
+                break;
+            }
+
+            acc += 1;
+        }
+        *fo = acc;
+    }
+
+    // create crc32
+    let crc32_section = hashes
+        .iter()
+        .map(|&x| map.get(x).unwrap().3)
+        .map(|x| x.to_be_bytes().to_vec())
+        .flatten()
+        .collect::<Vec<_>>();
+
+    // create offset table
+    let offset_table = hashes
+        .iter()
+        .map(|&x| map.get(x).unwrap().2 as u32)
+        .map(|x| x.to_be_bytes().to_vec())
+        .flatten()
+        .collect::<Vec<_>>();
+
+    fs::create_dir_all(format!(".git/objects/pack"));
+    let mut idx_file = fs::File::create(".git/objects/pack/pack.idx").unwrap();
+    let mut hasher = Sha1::new();
+    idx_file.write(b"\xfftOc");
+    idx_file.write(&(2 as u32).to_be_bytes());
+    hasher.update(b"\xfftOc");
+    hasher.update(&(2 as u32).to_be_bytes());
+
+    let fanout_bytes = &fanout
+        .iter()
+        .map(|x| x.to_be_bytes().to_vec())
+        .flatten()
+        .collect::<Vec<_>>();
+
+    idx_file.write(fanout_bytes);
+    hasher.update(fanout_bytes);
+
+    for h in hashes {
+        let h = hex::decode(h).unwrap();
+        idx_file.write(&h);
+        hasher.update(&h);
+    }
+
+    idx_file.write(&crc32_section);
+    hasher.update(crc32_section);
+
+    idx_file.write(&offset_table);
+    hasher.update(offset_table);
+
     let mut hash = [0; 20];
     stream.read_exact(&mut hash).unwrap();
 
-    fs::create_dir_all(format!(".git/objects/pack"));
+    idx_file.write(&hash);
+    hasher.update(hash);
+
+    let idx_hash = hasher.finalize();
+    idx_file.write(&idx_hash);
+
+    fs::rename(
+        ".git/objects/pack/pack.idx",
+        format!(".git/objects/pack/pack_{}.idx", hex::encode(hash)),
+    );
+
     fs::write(
         format!(".git/objects/pack/pack_{}.pack", hex::encode(hash)),
         packfile,
