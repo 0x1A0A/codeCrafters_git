@@ -1,6 +1,6 @@
 use core::panic;
 
-use crate::objects::{Kind, Object};
+use crate::git::objects::Object;
 
 #[derive(Debug)]
 pub struct Options {
@@ -8,7 +8,7 @@ pub struct Options {
 }
 
 pub fn invoke(hash: &str, options: Options) {
-    let mut data = match Object::read(hash) {
+    let data = match Object::read_from_hash(hash) {
         Ok(ok) => ok,
         Err(e) => panic!("{}", e),
     };
@@ -17,10 +17,5 @@ pub fn invoke(hash: &str, options: Options) {
         panic!("we now only support pretty print");
     }
 
-    match data.kind {
-        Kind::Blob => {
-            let _ = std::io::copy(&mut data.content, &mut std::io::stdout());
-        }
-        k => panic!("unknow how to print this kind {k}"),
-    }
+    data.cat();
 }

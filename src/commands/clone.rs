@@ -10,9 +10,8 @@ use std::{
 };
 
 use crate::git::{
-    commit,
+    objects::*,
     packfile::{headers, read_object, ObjType},
-    tree,
 };
 
 use super::git_init;

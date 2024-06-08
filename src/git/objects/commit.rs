@@ -19,10 +19,10 @@ impl From<Vec<&str>> for Author {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Commit {
     pub tree: String,
-    pub parent: Vec<String>,
+    pub parents: Vec<String>,
     pub author: Author,
     pub committer: Author,
     pub message: String,
@@ -70,7 +70,7 @@ pub fn parse(stream: &mut impl Read) -> std::io::Result<Commit> {
 
     Ok(Commit {
         tree,
-        parent,
+        parents: parent,
         author,
         committer,
         message,
@@ -81,7 +81,7 @@ pub fn parse(stream: &mut impl Read) -> std::io::Result<Commit> {
 mod tests {
     use std::io::BufReader;
 
-    use crate::git::commit::Author;
+    use super::Author;
 
     const COMMIT: &str = "tree 11144a9d4ce9ddea810a3d8b74abbd912e5028b1
 parent e1b03b60755972a80dfa8cb02326087d8b38b852
@@ -99,7 +99,10 @@ test: Tree parsing
 
         let commit = commit.unwrap();
         assert_eq!(commit.tree, "11144a9d4ce9ddea810a3d8b74abbd912e5028b1");
-        assert_eq!(commit.parent[0], "e1b03b60755972a80dfa8cb02326087d8b38b852");
+        assert_eq!(
+            commit.parents[0],
+            "e1b03b60755972a80dfa8cb02326087d8b38b852"
+        );
         assert_eq!(commit.message, "test: Tree parsing");
         assert_eq!(
             commit.author,

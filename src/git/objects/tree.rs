@@ -3,7 +3,7 @@ use std::{
     io::{BufRead, BufReader, Read},
 };
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct TreeItem {
     pub mode: u32,
     pub name: String,
@@ -25,7 +25,7 @@ pub fn parse(stream: &mut impl Read) -> std::io::Result<Vec<TreeItem>> {
     Ok(tree)
 }
 
-pub fn take(reader: &mut impl BufRead) -> Option<TreeItem> {
+fn take(reader: &mut impl BufRead) -> Option<TreeItem> {
     let mut data = Vec::new();
 
     if let Ok(consume) = reader.read_until(0x00, &mut data) {
